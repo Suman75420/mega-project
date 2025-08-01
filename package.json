@@ -4,8 +4,11 @@
   "description": "a backend project",
   "type": "module",
   "scripts": {
-    "dev": "nodemon public/src/index.js"
-  },
+   
+  "dev": "nodemon --exec \"node --experimental-json-modules -r dotenv/config\" public/src/index.js"
+},
+
+ 
   "keywords": [
     "javascript",
     "backend",
