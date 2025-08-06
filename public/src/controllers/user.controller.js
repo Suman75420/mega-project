@@ -1,8 +1,10 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import {User} from "../models/user.model.js";
-import {uploadOnCloudinary} from "../utils/Cloudinary.js";
+import { uploadOnCloudinary } from "../utils/Cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import fs from "fs";
+
 
 const registerUser = asyncHandler( async (req,res) => {
    
@@ -17,7 +19,8 @@ const registerUser = asyncHandler( async (req,res) => {
 // return res 
 
   const  { fullName,email,username,password} = req.body
-  console.log("email : ", email);
+ // console.log("email : ", email);
+ // console.log("req-body " ,req.body);
 
 // if(fullName === ""){
 //      throw new ApiError(400 ,"fullname is required"); 
@@ -27,40 +30,62 @@ const registerUser = asyncHandler( async (req,res) => {
     [fullName,email,username,password].some((field) => field?.trim() === "")
     ) 
     {
-     throw new ApiError(400, "All fields are required")
+     throw new ApiError(400, "All fields are required");
     }
 
-   const existedUser = User.findOne({
-    $or :[{username},{email}]
+   const existedUser = await User.findOne({
+        $or: [{ username }, { email }]
+    })
+
+    if (existedUser) {
+        throw new ApiError(409, "User with email or username already exists");
+    }
+    //console.log(req.files);
+
+    const avatarLocalPath = req.files?.avatar?.[0]?.path;
+    //const coverImageLocalPath = req.files?.coverImage[0]?.path;
+
     
-   })
 
-    if(existedUser){
-        throw new ApiError(409,"User with email or username already exists")
+    if (!avatarLocalPath) {
+        throw new ApiError(400, "Avatar file is required");
     }
 
-    const avatarLocalPath = req.files?.avatar[0]?.path;
-    const coverImageLocalPath = req.files?.coverImage[0]?.path;
+    console.log("🟡 Avatar path from multer:", avatarLocalPath);
+console.log("🟡 File exists:", fs.existsSync(avatarLocalPath));
 
-    if(!avatarLocalPath) {
-        throw new ApiError(400,"Avatar file is required")
+
+    const avatar = await uploadOnCloudinary(avatarLocalPath);
+    
+    if (!avatar) {
+        throw new ApiError(500, "failed to upload avatar to cloudinary");
+    }
+    
+    let coverImageLocalPath;
+    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
+        coverImageLocalPath = req.files.coverImage[0].path;
     }
 
-    const  avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+   let coverImage;
+     if(coverImageLocalPath){
+      coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
-    if(!avatar){
-      throw new ApiError(400,"Avatar file is required")
+      if(!coverImage){
+        console.warn("failed to upload cover image to cloudinary");
+      }
     }
+console.log("🟢 Cloudinary upload result:", avatar);
+
 
     const user = await User.create({
-      fullName,
-      avatar:avatar.url,
-      coverImage : coverImage?.url || "",
-      email,
-      password,
-      username : username.toLowerCase()
-    })
+        fullName,
+        avatar: avatar.url,
+        coverImage: coverImage?.url || "",
+        email, 
+        password,
+        username: username.toLowerCase()
+    });
+
 // user._id field mongoose automatically add krta hai
       const createdUser = await User.findById(user._id).select(
         "-password -refreshToken"
