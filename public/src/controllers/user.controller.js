@@ -1,13 +1,30 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiError } from "../utils/ApiError.js";
-import {User} from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/Cloudinary.js";
+import {ApiError} from "../utils/ApiError.js";
+import { User } from "../models/user.model.js";
+import {uploadOnCloudinary} from "../utils/Cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import fs from "fs";
 
+const generateAccessAndRefreshTokens = async(userid) => {
+  try {
+   const user = await User.findById(userid)
+   const accessToken = user.generateAccessToken()
+   const refreshToken = user.
+   generateRefreshToken()
+
+   user.refreshToken = refreshToken
+   await user.save({ validateBeforeSave : false})
+
+   return {accessToken , refreshToken}
+
+  }
+  catch (error) {
+     throw new ApiError(500,"Something went wrong while generating refresh and acces token ")
+  }
+}
 
 const registerUser = asyncHandler( async (req,res) => {
-   
+  
 // get user deatails from frontend
 // validation - not empty
 // check if user already exists : username , email
@@ -19,7 +36,7 @@ const registerUser = asyncHandler( async (req,res) => {
 // return res 
 
   const  { fullName,email,username,password} = req.body
- // console.log("email : ", email);
+ //console.log("email : ", email);
  // console.log("req-body " ,req.body);
 
 // if(fullName === ""){
@@ -103,6 +120,98 @@ console.log("🟢 Cloudinary upload result:", avatar);
     })
 
 
+const loginUser = asyncHandler(async (req,res) => {
+   // get data from the user & store it in var
+   //check the username or password is equal to username==useraname && password == password
+   // if yes then perform action 
+   // call mongodb to check that username or password is present or not if not then throw error
+   //if username and email is present then get its id and store var in it
+   //retrieve username & password  from that var & then check both are same or not if same then redirect to page that want if not throw error 
+
+
+   //req.body - data,username or email,find user,password check,access & refresh token,send cookie
+
+   const { email, username,password} = req.body
+   console.log('received:' ,req.body);
+   
+   
+  if (typeof username !== 'string' && typeof email !== 'string') {
+  throw new ApiError(400, "username or email is required");
+}
+  //  if(!username && !email){
+  //   throw new ApiError(400,"username or email is required"); 
+  //  }
+
+   const user = await  User.findOne({
+    $or : [{username} , {email}]
+    });
+  //console.log(user);
+
+  if (!user){
+     throw new ApiError(404,"User does not exist");
+  }
+
+  const isPasswordValid  = await user.isPasswordCorrect(password)
+
+  // user jo hmlog banye jisme value rakhe or User jo mongoose se mila 
+
+  if(!isPasswordValid){
+    throw new ApiError(401,"Invalid user credentials");
+  }
+
+  const {accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id)
+
+  const loggedInUser = await User.findById(user._id).select("-password - refreshToken")
+
+  const options = {
+    httpOnly : true,
+    secure : true
+  }
+
+   return res
+   .status(200)
+   .cookie("accessToken", accessToken, options)
+   .cookie("refreshToken", refreshToken,      options)
+   .json(
+    new ApiResponse(
+       200,
+       {
+        user :loggedInUser , accessToken,refreshToken
+       },
+       "User logged in successfully"
+    )
+   )
+    })
+
+const logoutUser = asyncHandler(async (req,res) => {
+  await  User.findByIdAndUpdate (
+     req.user._id,
+     {
+      // $set : {
+      //   refreshToken : undefined
+      // }
+      $unset : {
+      refreshToken : 1
+    }
+     },
+     {
+      new : true
+     }
+   )
+   const options  = {
+    httpOnly : true,
+    secure : true
+   }
+   return res
+   .status(200)
+   .clearCookie("accessToken", options)
+   .clearCookie("refreshToken",options)
+   .json(new ApiResponse(200, {},"User logged Out"))
+})
+
+
 export { 
     registerUser,
+    loginUser,
+    logoutUser
  }
